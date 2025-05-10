@@ -48,6 +48,68 @@ let mkPiece color pieceType = Some { pieceType = pieceType; color = color; hasMo
 let mutable selectedX = -1
 let mutable selectedY = -1
 
+let isInside (x, y) =
+    x >= 0 && x < boardSize && y >= 0 && y < boardSize
+
+let isEnemy (board: Board) (color: Color) (x: int, y: int) =
+    match board.[x, y] with
+    | Some piece -> piece.color <> color
+    | None -> false
+
+let isEmpty (board: Board) (x: int, y: int) =
+    board.[x, y].IsNone
+
+let rangeBetween a b =
+    if a < b then [a+1 .. b-1]
+    else [b+1 .. a-1]
+
+let isClearStraight (board: Board) (fromX, fromY) (toX, toY) =
+    if fromX = toX then
+        // Vertical move
+        rangeBetween fromY toY
+        |> List.forall (fun y -> board.[fromX, y] |> Option.isNone)
+    elif fromY = toY then
+        // Horizontal move
+        rangeBetween fromX toX
+        |> List.forall (fun x -> board.[x, fromY] |> Option.isNone)
+    else
+        false
+
+let isLegalKnightMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
+    let dx = abs (toX - fromX)
+    let dy = abs (toY - fromY)
+    let legalL = (dx = 2 && dy = 1) || (dx = 1 && dy = 2)
+    legalL && (isEmpty board (toX, toY) || isEnemy board piece.color (toX, toY))
+
+let isClearDiagonal (board: Board) (fromX, fromY) (toX, toY) =
+    let dx = toX - fromX
+    let dy = toY - fromY
+    if abs dx <> abs dy then false
+    else
+        let stepX = if dx > 0 then 1 else -1
+        let stepY = if dy > 0 then 1 else -1
+        let count = abs dx - 1
+        Seq.init count (fun i -> (fromX + stepX * (i + 1), fromY + stepY * (i + 1)))
+        |> Seq.forall (fun (x, y) -> board.[x, y].IsNone)
+
+let isLegalBishopMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
+    isClearDiagonal board (fromX, fromY) (toX, toY)
+    && (isEmpty board (toX, toY) || isEnemy board piece.color (toX, toY))
+
+let isLegalRookMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
+    isClearStraight board (fromX, fromY) (toX, toY)
+    && (isEmpty board (toX, toY) || isEnemy board piece.color (toX, toY))
+
+let isLegalQueenMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
+    isLegalRookMove board piece (fromX, fromY) (toX, toY)
+    || isLegalBishopMove board piece (fromX, fromY) (toX, toY)
+
+let isLegalKingMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
+    let dx = abs (toX - fromX)
+    let dy = abs (toY - fromY)
+    (dx <= 1 && dy <= 1)
+    && (isEmpty board (toX, toY) || isEnemy board piece.color (toX, toY))
+
 let isLegalPawnMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
     let direction = match piece.color with White -> -1 | Black -> 1
     let startRank = match piece.color with White -> 6 | Black -> 1
@@ -73,10 +135,16 @@ let isLegalPawnMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
     | _ -> false
 
 let isLegalMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
-    match piece.pieceType with
-    | Pawn -> isLegalPawnMove board piece (fromX, fromY) (toX, toY)
-    | _ -> true // For now allow all other pieces to move anywhere
-
+    if not (isInside (toX, toY)) then false
+    elif fromX = toX && fromY = toY then false
+    else
+        match piece.pieceType with
+        | Pawn -> isLegalPawnMove board piece (fromX, fromY) (toX, toY)
+        | Knight -> isLegalKnightMove board piece (fromX, fromY) (toX, toY)
+        | Rook -> isLegalRookMove board piece (fromX, fromY) (toX, toY)
+        | Bishop -> isLegalBishopMove board piece (fromX, fromY) (toX, toY)
+        | Queen -> isLegalQueenMove board piece (fromX, fromY) (toX, toY)
+        | King -> isLegalKingMove board piece (fromX, fromY) (toX, toY)
 
 let initializeBoard () =
     for i in 0 .. 7 do
