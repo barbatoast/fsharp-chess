@@ -86,7 +86,9 @@ let isLegalKnightMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
 let isClearDiagonal (board: Board) (fromX, fromY) (toX, toY) =
     let dx = toX - fromX
     let dy = toY - fromY
-    if abs dx <> abs dy then false
+    if dx = 0 && dy = 0 then false
+    elif abs dx <> abs dy then false
+    elif abs dx = 1 then true // adjacent diagonal; no pieces between
     else
         let stepX = if dx > 0 then 1 else -1
         let stepY = if dy > 0 then 1 else -1
