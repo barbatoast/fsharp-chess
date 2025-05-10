@@ -106,12 +106,6 @@ let isLegalQueenMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
     isLegalRookMove board piece (fromX, fromY) (toX, toY)
     || isLegalBishopMove board piece (fromX, fromY) (toX, toY)
 
-let isLegalKingMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
-    let dx = abs (toX - fromX)
-    let dy = abs (toY - fromY)
-    (dx <= 1 && dy <= 1)
-    && (isEmpty board (toX, toY) || isEnemy board piece.color (toX, toY))
-
 let isLegalPawnMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
     let direction = match piece.color with White -> -1 | Black -> 1
     let startRank = match piece.color with White -> 6 | Black -> 1
@@ -136,23 +130,124 @@ let isLegalPawnMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
     // Anything else is illegal
     | _ -> false
 
+let isBasicKingMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
+    let dx = abs (toX - fromX)
+    let dy = abs (toY - fromY)
+    let destination = board.[toX, toY]
+    dx <= 1 && dy <= 1 &&
+    (destination.IsNone || isEnemy board piece.color (toX, toY))
+
+let isPseudoLegalMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
+    match piece.pieceType with
+    | Pawn   -> isLegalPawnMove board piece (fromX, fromY) (toX, toY)
+    | Knight -> isLegalKnightMove board piece (fromX, fromY) (toX, toY)
+    | Bishop -> isLegalBishopMove board piece (fromX, fromY) (toX, toY)
+    | Rook   -> isLegalRookMove board piece (fromX, fromY) (toX, toY)
+    | Queen  -> isLegalQueenMove board piece (fromX, fromY) (toX, toY)
+    | King   -> isBasicKingMove board piece (fromX, fromY) (toX, toY) // no check check here
+
+let isSquareAttacked (board: Board) (x: int) (y: int) (byColor: Color) =
+    [ for fromX in 0 .. boardSize - 1 do
+      for fromY in 0 .. boardSize - 1 do
+        match board.[fromX, fromY] with
+        | Some attacker when attacker.color = byColor ->
+            if isPseudoLegalMove board attacker (fromX, fromY) (x, y) then
+                yield true
+        | _ -> () ]
+    |> List.exists id
+
+let findKing (board: Board) (color: Color) : (int * int) option =
+    [ for x in 0 .. boardSize - 1 do
+      for y in 0 .. boardSize - 1 do
+        match board.[x, y] with
+        | Some { pieceType = King; color = c } when c = color -> yield (x, y)
+        | _ -> () ]
+    |> List.tryHead
+
+let isInCheck (board: Board) (color: Color) =
+    match findKing board color with
+    | Some (kx, ky) -> isSquareAttacked board kx ky (if color = White then Black else White)
+    | None -> false // should not happen unless king is missing
+
 let isLegalMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
-    if not (isInside (toX, toY)) then false
-    elif fromX = toX && fromY = toY then false
+    if not (isPseudoLegalMove board piece (fromX, fromY) (toX, toY)) then false
     else
-        match piece.pieceType with
-        | Pawn -> isLegalPawnMove board piece (fromX, fromY) (toX, toY)
-        | Knight -> isLegalKnightMove board piece (fromX, fromY) (toX, toY)
-        | Rook -> isLegalRookMove board piece (fromX, fromY) (toX, toY)
-        | Bishop -> isLegalBishopMove board piece (fromX, fromY) (toX, toY)
-        | Queen -> isLegalQueenMove board piece (fromX, fromY) (toX, toY)
-        | King -> isLegalKingMove board piece (fromX, fromY) (toX, toY)
+        // Simulate move
+        let saved = board.[toX, toY]
+        board.[toX, toY] <- Some piece
+        board.[fromX, fromY] <- None
+
+        let stillInCheck = isInCheck board piece.color
+
+        board.[fromX, fromY] <- Some piece
+        board.[toX, toY] <- saved
+
+        not stillInCheck
+
+let isLegalKingMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
+    let dx = abs (toX - fromX)
+    let dy = abs (toY - fromY)
+    let destination = board.[toX, toY]
+    let isBasicStep = dx <= 1 && dy <= 1
+    let isTargetValid = isEmpty board (toX, toY) || isEnemy board piece.color (toX, toY)
+
+    if not (isBasicStep && isTargetValid) then false
+    else
+        // simulate the move to see if king would be in check
+        let saved = board.[toX, toY]
+        board.[toX, toY] <- board.[fromX, fromY]
+        board.[fromX, fromY] <- None
+
+        let stillInCheck = isInCheck board piece.color
+
+        // restore board
+        board.[fromX, fromY] <- board.[toX, toY]
+        board.[toX, toY] <- saved
+
+        not stillInCheck
 
 let generateLegalMoves (board: Board) (piece: Piece) (x: int, y: int) =
     [ for toX in 0 .. boardSize - 1 do
         for toY in 0 .. boardSize - 1 do
             if isLegalMove board piece (x, y) (toX, toY) then
                 yield (toX, toY) ]
+
+let generateAllLegalMoves (board: Board) (color: Color) =
+    [ for fromX in 0 .. boardSize - 1 do
+      for fromY in 0 .. boardSize - 1 do
+        match board.[fromX, fromY] with
+        | Some piece when piece.color = color ->
+            for toX in 0 .. boardSize - 1 do
+              for toY in 0 .. boardSize - 1 do
+                if isLegalMove board piece (fromX, fromY) (toX, toY) then
+                    // simulate move
+                    let saved = board.[toX, toY]
+                    board.[toX, toY] <- board.[fromX, fromY]
+                    board.[fromX, fromY] <- None
+                    let stillInCheck = isInCheck board color
+                    // undo move
+                    board.[fromX, fromY] <- board.[toX, toY]
+                    board.[toX, toY] <- saved
+
+                    if not stillInCheck then
+                        yield (fromX, fromY, toX, toY)
+        | _ -> () ]
+
+let checkGameEnd (board: Board) (color: Color) =
+    let legalMoves = generateAllLegalMoves board color
+    let inCheck = isInCheck board color
+
+    match inCheck, legalMoves with
+    | true, [] -> Some "Checkmate"
+    | false, [] -> Some "Stalemate"
+    | _ -> None
+
+match checkGameEnd gameState.board (if gameState.whiteTurn then Black else White) with
+| Some result ->
+    printfn "Game over: %s" result
+    Raylib.DrawText($"Game Over: {result}", 100, 100, 40, Color.RED)
+    // You could freeze input or display a restart option
+| None -> ()
 
 let initializeBoard () =
     for i in 0 .. 7 do
