@@ -1,7 +1,5 @@
 ﻿open Raylib_cs
 
-// -- Types --
-
 type Color = White | Black
 
 type PieceType =
@@ -122,16 +120,6 @@ let handleMouseClick () =
                     gameState <- { gameState with selected = None; whiteTurn = not gameState.whiteTurn }
                 | None ->
                     gameState <- { gameState with selected = None }
-
-let checkMouseClick () =
-    if CBool.op_Implicit(Raylib.IsMouseButtonPressed MouseButton.MOUSE_LEFT_BUTTON) then
-        let mousePos = Raylib.GetMousePosition()
-        let x = int mousePos.X / tileSize
-        let y = int mousePos.Y / tileSize
-        if x >= 0 && x < boardSize && y >= 0 && y < boardSize then
-            selectedX <- x
-            selectedY <- y
-            printfn "Tile selected: %c%d" (char (x + int 'A')) (8 - y)
 
 [<EntryPoint>]
 let main _ =
