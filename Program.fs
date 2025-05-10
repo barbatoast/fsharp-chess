@@ -22,6 +22,7 @@ type GameState = {
     board: Board
     whiteTurn: bool
     selected: (int * int) option
+    legalTargets: (int * int) list
 }
 
 let boardSize = 8
@@ -33,6 +34,7 @@ let mutable gameState = {
     board = Array2D.create boardSize boardSize None
     whiteTurn = true
     selected = None
+    legalTargets = []
 }
 
 let lightColor = Color(0xee, 0xee, 0xd2, 255)
@@ -146,6 +148,12 @@ let isLegalMove (board: Board) (piece: Piece) (fromX, fromY) (toX, toY) =
         | Queen -> isLegalQueenMove board piece (fromX, fromY) (toX, toY)
         | King -> isLegalKingMove board piece (fromX, fromY) (toX, toY)
 
+let generateLegalMoves (board: Board) (piece: Piece) (x: int, y: int) =
+    [ for toX in 0 .. boardSize - 1 do
+        for toY in 0 .. boardSize - 1 do
+            if isLegalMove board piece (x, y) (toX, toY) then
+                yield (toX, toY) ]
+
 let initializeBoard () =
     for i in 0 .. 7 do
         gameState.board.[i, 1] <- mkPiece Black Pawn
@@ -167,6 +175,10 @@ let drawBoard () =
             | Some (selX, selY) when selX = x && selY = y ->
                 Raylib.DrawRectangleLinesEx(Rectangle(float32 (x * tileSize), float32 (y * tileSize), float32 tileSize, float32 tileSize), 4.0f, highlightColor)
             | _ -> ()
+    for (tx, ty) in gameState.legalTargets do
+        let cx = tx * tileSize + tileSize / 2
+        let cy = ty * tileSize + tileSize / 2
+        Raylib.DrawCircle(cx, cy, 12.0f, Raylib.ColorAlpha(highlightColor, 0.3f))
 
 let pieceToChar (piece: Piece) : char =
     let c =
@@ -202,23 +214,23 @@ let handleMouseClick () =
         | None ->
             match gameState.board.[x, y] with
             | Some piece when piece.color = (if gameState.whiteTurn then White else Black) ->
-                gameState <- { gameState with selected = Some (x, y) }
+                let moves = generateLegalMoves gameState.board piece (x, y)
+                gameState <- { gameState with selected = Some (x, y); legalTargets = moves }
             | _ -> ()
 
         | Some (fromX, fromY) ->
             match gameState.board.[fromX, fromY] with
             | Some piece when isLegalMove gameState.board piece (fromX, fromY) (x, y) ->
-                let target = gameState.board.[x, y]
-                let isCapture =
-                    match target with
-                    | Some t -> t.color <> piece.color
-                    | None -> false
-
                 gameState.board.[x, y] <- Some { piece with hasMoved = true }
                 gameState.board.[fromX, fromY] <- None
-                gameState <- { gameState with selected = None; whiteTurn = not gameState.whiteTurn }
+                gameState <- {
+                    gameState with
+                        selected = None
+                        legalTargets = []
+                        whiteTurn = not gameState.whiteTurn
+                }
             | _ ->
-                gameState <- { gameState with selected = None }
+                gameState <- { gameState with selected = None; legalTargets = [] }
 
 [<EntryPoint>]
 let main _ =
